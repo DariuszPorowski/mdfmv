@@ -30,3 +30,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+
+.task/
+dist/
+bin/
+testresults.*
+.lycheecache

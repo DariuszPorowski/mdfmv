@@ -1,0 +1,167 @@
+#  yaml-language-server: $schema=https://taskfile.dev/schema.json
+# docs: https://taskfile.dev
+---
+version: "3"
+
+includes:
+  internal: internal.yml
+
+tasks:
+  # * Install golangci-lint
+  install:golangci-lint:
+    desc: Install golangci-lint
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
+  # * Install goreleaser
+  install:goreleaser:
+    desc: Install goreleaser
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: github.com/goreleaser/goreleaser/v2@latest
+
+  install:gofumpt:
+    desc: Install gofumpt
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: mvdan.cc/gofumpt@latest
+
+  install:goimports:
+    desc: Install goimports
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: golang.org/x/tools/cmd/goimports@latest
+
+  install:gotestsum:
+    desc: Install gotestsum
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: gotest.tools/gotestsum@latest
+
+  install:dlv:
+    desc: Install dlv
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: github.com/go-delve/delve/cmd/dlv@latest
+
+  install:govulncheck:
+    desc: Install govulncheck
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: golang.org/x/vuln/cmd/govulncheck@latest
+
+  install:deadcode:
+    desc: Install deadcode
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: golang.org/x/tools/cmd/deadcode@latest
+
+  install:gocover-cobertura:
+    desc: Install gocover-cobertura
+    cmds:
+      - task: internal:install:go
+        vars:
+          APP: github.com/boumenot/gocover-cobertura@latest
+
+  # * Tools
+  tools:
+    desc: Install Go tools
+    cmds:
+      - task: install:golangci-lint
+      - task: install:goreleaser
+      - task: install:gofumpt
+      - task: install:goimports
+      - task: install:gotestsum
+      - task: install:dlv
+      - task: install:govulncheck
+      - task: install:deadcode
+      - task: install:gocover-cobertura
+
+  # * Lint
+  lint:
+    desc: Lint Go files
+    cmds:
+      - deadcode ./...
+      - govulncheck -test -show verbose ./...
+      - go vet ./...
+      - golangci-lint run --fix
+    dir: "{{.ROOT_DIR}}"
+
+  # * Build
+  build:
+    desc: Build development snapshot
+    cmds:
+      - go build .
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    dir: "{{.ROOT_DIR}}"
+
+  build:dev:
+    desc: Build development snapshot
+    deps: [build:clean]
+    cmds:
+      - goreleaser build --snapshot --clean --single-target
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    dir: "{{.ROOT_DIR}}"
+
+  build:all:
+    desc: Build snapshots
+    deps: [build:clean]
+    cmds:
+      - goreleaser build --snapshot --clean
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    dir: "{{.ROOT_DIR}}"
+
+  build:clean:
+    desc: Cleanup build workspace
+    vars:
+      BUILD_DEV_OUTPUT_DIR: dist
+    cmds:
+      - cmd: |
+          {{.PWSH}} 'Remove-Item -Path {{.BUILD_DEV_OUTPUT_DIR}} -Recurse -Force -ErrorAction SilentlyContinue; exit 0'
+        platforms: [windows]
+      - cmd: rm -rf {{.BUILD_DEV_OUTPUT_DIR}}
+        platforms: [linux, darwin]
+    dir: "{{.ROOT_DIR}}"
+    silent: true
+    internal: true
+
+  # * Test
+  test:
+    desc: Run tests
+    cmds:
+      - go clean -testcache
+      - 'gotestsum --format-hivis --format {{.FORMAT}} --jsonfile "testresults.json" -- ./... -p {{numCPU}} -timeout 30m -coverprofile="coverage.out" -covermode atomic'
+      - task: test:getcover
+    vars:
+      FORMAT: '{{if eq .GITHUB_ACTIONS "true"}}github-actions{{else}}pkgname-and-test-fails{{end}}'
+    dir: "{{.ROOT_DIR}}"
+
+  test:getcover:
+    desc: Get coverage results
+    internal: true
+    cmds:
+      - cmd: |
+          {{ .PWSH }} 'Get-Content coverage.out | gocover-cobertura > coverage.xml'
+        platforms: [windows]
+      - cmd: gocover-cobertura < coverage.out > coverage.xml
+        platforms: [linux, darwin]
+      - go tool cover -html coverage.out -o coverage.html
+    dir: "{{.ROOT_DIR}}"
